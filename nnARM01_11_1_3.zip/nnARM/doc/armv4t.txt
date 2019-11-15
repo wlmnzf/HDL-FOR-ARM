@@ -1,0 +1,28 @@
+剩下的功能和已知的毛病
+
+1	协处理器指令
+2	中断处理应该顾及decoder内部状态
+3	system状态
+========4	译码器会把某些指令译成ALU，注意测试
+========5	译码器中存在寄存器域（4位）和寄存器常量的(8位)比较，应该改正
+6	乘法测试不完全
+========7	forwarding的链太长，应该改成树形
+========8	没有write back，加一个就可以大大提高速度
+9	ALU一级完成太慢，可以将乘法器和移位器放在第一级，将加法器放在第二级
+10	MMU必须要有
+11	调试接口
+12	timer和UART
+13	操作系统
+14	中断控制器
+========15	FIQ进入之后应该disable FIQ和IRQ，irq进入后则仅disable IRQ
+=======16	加WriteBack。
+=======17	整理stall engine
+=======18	aluowncango的设置不对，仅仅因为decoder的设计才导致他没有暴露出来
+========它如果被forwarding，那么他不会被使用19	decoder当某个线程不写寄存器的时候，一定要将他设成linkregister
+========20	CPSR和SPSR从write back出来之后，需要确定是否应该在forwarding之前处理以下
+========它如果被forwarding，那么他不会被使用21	防止linkregister被使用和forwarding
+========22	将blankop和null分开
+23	当确定的协处理器没有出现时，应该生成UND异常
+24	PSR的改写需要权限，但是在用户态下经过forwarding会在转换状态时产生对PSR的非法写。
+25	寄存器标志改为高位表示状态
+26	使用conmax互联wishbone外设

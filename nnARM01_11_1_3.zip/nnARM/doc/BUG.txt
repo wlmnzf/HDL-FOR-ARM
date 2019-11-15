@@ -1,0 +1,3 @@
+1	interrupt do not take care the status of the whole pipeline, it will enter pipeline even when there is a instruction have not sending out all its micro operations
+2	the read of register file do not affect by change state signal, these signal only use in write.
+3	Altera QUARTUS do not accept "function", and will run to dead if it meet such structure

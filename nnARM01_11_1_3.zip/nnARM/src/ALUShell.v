@@ -1,0 +1,1196 @@
+module ALUShell(out_ALUWriteEnable,
+		out_ALUWriteBus,		//write result
+		out_CPSR,
+		out_SPSR,
+		out_ALUTargetRegister,	//write to which register
+		out_SimpleALUResult,
+		out_SimpleALUTargetRegister,
+		out_MEMType,
+		out_MEMTargetRegister,
+		out_SimpleMEMType,
+		out_SimpleMEMTargetRegister,
+		out_StoredValue,
+		out_ALUPSRType,
+		out_MEMPSRType,
+		out_IsLoadToPC,
+		out_IfChangeState,
+		out_ChangeStateAction,
+		out_MEMStoreDelayBranchTarget,
+		out_MEMDelayBranch,
+		out_MemAccessUserBankRegister,
+		out_MEMHalfWordTransferType,
+		out_SWPByteOrWord,
+		//above is signal relate to write
+		//below is signal relate to new operation
+		in_ALUEnable,
+		in_ALUType,
+		in_ALULeftRegister,		
+		in_ALURightRegister,		
+		in_ALUThirdRegister,
+		in_ALULeftFromImm,
+		in_ALURightFromImm,
+		in_ALUThirdFromImm,
+		in_CPSRFromImm,
+		in_SPSRFromImm,
+		in_ALURightShiftType,
+		in_ALULeftReadBus,
+		in_ALURightReadBus,
+		in_ALUThirdReadBus,
+		in_ALUCPSRReadBus,
+		in_ALUSPSRReadBus,
+		in_ALUTargetRegister,
+		in_SimpleALUType,
+		in_SimpleALUTargetRegister,
+		in_ALUMisc,
+		in_ALUPSRType,
+		in_NextAddressGoWithInstruction2ALU,
+		//pass to mem stage for this instruction's mem operation
+		in_MEMEnable,
+		in_MEMType,
+		in_MEMTargetRegister,
+		in_SimpleMEMType,
+		in_SimpleMEMTargetRegister,
+		in_MEMPSRType,
+		//below is signal relate to forward operand from mem stage
+		in_MEMWriteEnable,
+		in_MEMWriteResult,
+		in_MEMTargetRegister2WB,
+		in_SimpleMEMResult,
+		in_SimpleMEMTargetRegister2WB,
+		in_MEMPSRType2WB,
+		in_MEMCPSR2WB,
+		in_MEMSPSR2WB,
+		//below is forwarding from write back
+		in_WBWriteEnable,
+		in_WBMainResult,
+		in_WBMainTargetRegister,
+		in_WBSimpleResult,
+		in_WBSimpleTargetRegister,
+		in_WBCPSR,
+		in_WBSPSR,
+		//below is signal relate to ALUComb connection
+		ALUCombResult,
+		ALUHighResult,
+		in_Carry,
+		in_Zero,
+		in_Neg,
+		in_Overflow,
+		ALUComb_ALUType,
+		ALUComb_LeftOperand,
+		ALUComb_RightOperand,
+		ALUComb_ThirdOperand,
+		ALUComb_RightOperandShiftType,
+		ALUComb_RightOperandShiftCount,
+		ALUComb_ShiftCountInReg,	//shift count in register
+		ALUComb_ShiftCountHigh3Bit,	//the [7:5] bit of shoft count when shift count is in register
+		ALUComb_Operand2IsReg,
+		//origin CPSR flag
+		ALUComb_Carry,
+		ALUComb_Neg,
+		ALUComb_Overflow,
+		ALUComb_Zero,
+		ALUComb_LongMulSig,
+		//signal relate to pc change in branch instruction
+		out_ChangePC,
+		out_NewPC,
+		//can alu go
+		out_ALUOwnCanGo,
+		//can mem go
+		in_MEMCanGo,
+		//mem tell you to clear next operation
+		in_MEMChangePC,
+		//thumb state
+		in_ThumbState,
+		clock,
+		reset
+		);
+
+//////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////
+//		input and output declaration			//
+//////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////
+//signal for write
+output						out_ALUWriteEnable;
+output	[`WordWidth-1:0]			out_ALUWriteBus;
+output	[`WordWidth-1:0]			out_CPSR,out_SPSR;
+output	[`Def_RegisterSelectWidth-1:0]		out_ALUTargetRegister;
+output	[`WordWidth-1:0]			out_SimpleALUResult;
+output	[`Def_RegisterSelectWidth-1:0]	out_SimpleALUTargetRegister;
+output	[`ByteWidth-1:0] 			out_MEMType;
+output	[`Def_RegisterSelectWidth-1:0]	out_MEMTargetRegister;
+output	[`ByteWidth-1:0]	out_SimpleMEMType;
+output	[`Def_RegisterSelectWidth-1:0]		out_SimpleMEMTargetRegister;
+output	[`WordWidth-1:0]			out_StoredValue;
+output	[`ByteWidth-1:0]			out_ALUPSRType,
+						out_MEMPSRType;
+						
+output						out_IsLoadToPC;
+
+output						out_IfChangeState;
+output	[4:0]					out_ChangeStateAction;
+
+output						out_MEMStoreDelayBranchTarget,out_MEMDelayBranch;
+output						out_MemAccessUserBankRegister;
+output	[1:0]					out_MEMHalfWordTransferType;
+output						out_SWPByteOrWord;
+
+reg						out_ALUWriteEnable;
+reg	[`WordWidth-1:0]			out_CPSR,out_SPSR;
+
+
+reg		[`WordWidth-1:0]			out_SimpleALUResult;
+reg		[`Def_RegisterSelectWidth-1:0]	out_SimpleALUTargetRegister;
+
+
+//signal for new operation
+input							in_ALUEnable;
+input	[`ByteWidth-1:0]				in_ALUType;
+input	[`Def_RegisterSelectWidth-1:0]	in_ALULeftRegister,
+							in_ALURightRegister,
+							in_ALUThirdRegister;
+input							in_ALULeftFromImm,
+							in_ALURightFromImm,
+							in_ALUThirdFromImm,
+							in_CPSRFromImm,
+							in_SPSRFromImm;
+input	[`Def_ShiftTypeWidth-1:0]		in_ALURightShiftType;
+input	[`WordWidth-1:0]				in_ALULeftReadBus,
+							in_ALURightReadBus,
+							in_ALUThirdReadBus;
+input	[`WordWidth-1:0]				in_ALUCPSRReadBus,
+							in_ALUSPSRReadBus;
+							
+input	[`Def_RegisterSelectWidth-1:0]	in_ALUTargetRegister;
+input	[`ByteWidth-1:0]				in_SimpleALUType;
+input	[`Def_RegisterSelectWidth-1:0]	in_SimpleALUTargetRegister;
+input	[`WordWidth-1:0]		in_ALUMisc;
+input	[`ByteWidth-1:0]		in_ALUPSRType;
+input	[`AddressBusWidth-1:0]		in_NextAddressGoWithInstruction2ALU;
+
+input in_MEMEnable;
+input [`ByteWidth-1:0] in_MEMType;
+input [`Def_RegisterSelectWidth-1:0] in_MEMTargetRegister;
+input [`ByteWidth-1:0] in_SimpleMEMType;
+input [`Def_RegisterSelectWidth-1:0] in_SimpleMEMTargetRegister;
+input [`ByteWidth-1:0]			in_MEMPSRType;
+
+//signal from mem
+input							in_MEMWriteEnable;
+input	[`WordWidth-1:0]				in_MEMWriteResult;
+input	[`Def_RegisterSelectWidth-1:0]	in_MEMTargetRegister2WB;
+input	[`ByteWidth-1:0]				in_MEMPSRType2WB;
+input	[`WordWidth-1:0]				in_MEMCPSR2WB,
+							in_MEMSPSR2WB;
+
+input	[`WordWidth-1:0]				in_SimpleMEMResult;
+input	[`Def_RegisterSelectWidth-1:0]	in_SimpleMEMTargetRegister2WB;
+
+input					in_WBWriteEnable;
+input	[`WordWidth-1:0]		in_WBMainResult,in_WBSimpleResult;
+input	[`Def_RegisterSelectWidth-1:0]	in_WBMainTargetRegister,in_WBSimpleTargetRegister;
+input	[`WordWidth-1:0]		in_WBCPSR,in_WBSPSR;
+
+//signal for ALUComb connection
+input	[`WordWidth-1:0]				ALUCombResult,ALUHighResult;
+input							in_Carry,
+							in_Zero,
+							in_Neg,
+							in_Overflow;
+output	[`ByteWidth-1:0]			ALUComb_ALUType;
+output	[`WordWidth-1:0]			ALUComb_LeftOperand,
+							ALUComb_RightOperand,
+							ALUComb_ThirdOperand;
+output	[`Def_ShiftTypeWidth-1:0]	ALUComb_RightOperandShiftType;
+output	[`Def_ShiftCountWidth-1:0]	ALUComb_RightOperandShiftCount;
+output					ALUComb_ShiftCountInReg;
+output	[2:0]				ALUComb_ShiftCountHigh3Bit;
+output					ALUComb_Operand2IsReg;
+output					ALUComb_Carry,ALUComb_Zero,ALUComb_Neg,ALUComb_Overflow;
+output					ALUComb_LongMulSig;
+
+//signal relate to change pc in branch instruction
+output					out_ChangePC;
+output	[`AddressBusWidth-1:0]		out_NewPC;
+reg					out_ChangePC;
+reg	[`AddressBusWidth-1:0]		out_NewPC;
+
+
+
+//can alu go?
+output						out_ALUOwnCanGo;
+
+//can mem go?
+input							in_MEMCanGo;
+
+input							in_MEMChangePC;
+
+input							in_ThumbState;
+
+input							clock,
+							reset;
+//////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////
+//		the register of pipeline			//
+//////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////
+//this means current instruction in alu is valid instruction and not a blank, 
+//but this do not means it can live further, if it do not satisfy the condition field, 
+//then it will not generate any thing to following stage
+//and the out_ALUWriteEnable is the real flag that indicate  if current instruction in alu can live further
+//only when an instruction is valid and it can satisfy the condition field, thus it can run to following stage
+reg							Valid;	
+reg	[`ByteWidth-1:0]				ALUType;
+reg	[`WordWidth-1:0]				LeftOperand,
+							RightOperand;
+reg	[`Def_ShiftTypeWidth-1:0]		RightShiftType;
+reg	[`Def_ShiftCountWidth-1:0]		RightShiftCount;
+reg	[2:0]					RightShiftCountHighBits;
+reg						RightShiftCountInReg;
+reg						Operand2IsReg;
+reg	[`Def_RegisterSelectWidth-1:0]	TargetRegister;
+
+reg	[`ByteWidth-1:0]				SimpleALUType;
+reg	[`Def_RegisterSelectWidth-1:0]	SimpleALUTargetRegister;
+
+reg	[`ByteWidth-1:0]				MEMType;
+reg	[`Def_RegisterSelectWidth-1:0]	MEMTargetRegister;
+reg	[`ByteWidth-1:0]				SimpleMEMType;
+reg	[`Def_RegisterSelectWidth-1:0]	SimpleMEMTargetRegister;
+reg	[`WordWidth-1:0]		StoredValue;
+reg	[`WordWidth-1:0]		CPSR,SPSR;
+reg	[`ByteWidth-1:0]		ALUPSRType;
+reg	[`ByteWidth-1:0]		MEMPSRType;
+//in what condition can this instruction continue to run
+reg	[3:0]				InstructionCondition;
+reg	[`AddressBusWidth-1:0]		NextAddressGoWithInstruction2ALU;
+reg					IsBranch;
+reg					IsLoadToPC;
+//reg					ALUOwnCanGo;
+//state change
+reg					IfChangeState;
+reg	[4:0]				ChangeStateAction;
+//signed or unsigned of MULL and MUAL
+reg					LongMulSig;
+
+//use in delay branch
+reg					MEMStoreDelayBranchTarget,MEMDelayBranch;
+
+//access user bank
+reg					MemAccessUserBankRegister;
+
+//half word transfer type
+reg	[1:0]				MEMHalfWordTransferType;
+
+//swp byte or word
+reg					SWPByteOrWord;
+
+reg							Next_Valid;
+
+reg	[`ByteWidth-1:0]				Next_ALUType;
+reg	[`WordWidth-1:0]				Next_LeftOperand,
+							Next_RightOperand;
+reg	[`Def_ShiftTypeWidth-1:0]		Next_RightShiftType;
+reg	[`Def_ShiftCountWidth-1:0]		Next_RightShiftCount;
+reg	[2:0]					Next_RightShiftCountHighBits;
+reg						Next_RightShiftCountInReg;
+reg						Next_Operand2IsReg;
+reg	[`Def_RegisterSelectWidth-1:0]	Next_TargetRegister;
+
+reg	[`ByteWidth-1:0]				Next_SimpleALUType;
+reg	[`Def_RegisterSelectWidth-1:0]	Next_SimpleALUTargetRegister;
+
+reg	[`ByteWidth-1:0]				Next_MEMType;
+reg	[`Def_RegisterSelectWidth-1:0]	Next_MEMTargetRegister;
+reg	[`ByteWidth-1:0]				Next_SimpleMEMType;
+reg	[`Def_RegisterSelectWidth-1:0]	Next_SimpleMEMTargetRegister;
+reg	[`WordWidth-1:0]		Next_StoredValue;
+reg	[`WordWidth-1:0]		Next_CPSR,Next_SPSR;
+reg	[`ByteWidth-1:0]		Next_ALUPSRType;
+reg	[`ByteWidth-1:0]		Next_MEMPSRType;
+reg	[3:0]				Next_InstructionCondition;
+reg	[`AddressBusWidth-1:0]		Next_NextAddressGoWithInstruction2ALU;
+reg					Next_IsBranch;
+reg					Next_IsLoadToPC;
+//reg					Next_ALUOwnCanGo;
+//state change
+reg					Next_IfChangeState;
+reg	[4:0]				Next_ChangeStateAction;
+//signed or unsigned of MULL and MUAL
+reg					Next_LongMulSig;
+
+reg					Next_MEMStoreDelayBranchTarget,Next_MEMDelayBranch;
+
+//access user bank
+reg					Next_MemAccessUserBankRegister;
+
+//half word transfer type
+reg	[1:0]				Next_MEMHalfWordTransferType;
+
+//swp byte or word
+reg					Next_SWPByteOrWord;
+
+
+
+//use this wire to creat tree of forwarding for left
+wire	LeftUseImm,LeftUseALUMain,LeftUseALUSimple,LeftUseMEMMain,LeftUseMEMSimple,LeftUseWBMain,LeftUseWBSimple;
+wire	[`WordWidth-1:0]	Left1,Left2,Left3,Left4,Left12,Left34,Left1234;
+
+//use this wire to creat tree of forwarding for right
+wire	RightUseImm,RightUseALUMain,RightUseALUSimple,RightUseMEMMain,RightUseMEMSimple,RightUseWBMain,RightUseWBSimple;
+wire	[`WordWidth-1:0]	Right1,Right2,Right3,Right4,Right12,Right34,Right1234;
+
+//use this wire to creat tree of forwarding for right
+wire	ThirdUseImm,ThirdUseALUMain,ThirdUseALUSimple,ThirdUseMEMMain,ThirdUseMEMSimple,ThirdUseWBMain,ThirdUseWBSimple;
+wire	[`WordWidth-1:0]	Third1,Third2,Third3,Third4,Third12,Third34,Third1234;
+
+//determine the current state of pipeline register
+always @(posedge clock or negedge reset)
+begin
+	if(reset==1'b0)
+	begin
+		ALUType=`ALUType_Null;
+		LeftOperand=`WordZero;
+		RightOperand=`WordZero;
+		RightShiftType=`Def_ShiftTypeZero;
+		RightShiftCount=`Def_ShiftCountZero;
+		RightShiftCountHighBits=3'b000;
+		RightShiftCountInReg=1'b0;
+		Operand2IsReg=1'b0;
+		TargetRegister=`Def_LinkRegister;
+
+		SimpleALUType=`ALUType_Null;
+		SimpleALUTargetRegister=`Def_LinkRegister;
+
+		MEMType=`MEMType_Null;
+		MEMTargetRegister=`Def_LinkRegister;
+		SimpleMEMType=`MEMType_Null;
+		SimpleMEMTargetRegister=`Def_LinkRegister;
+		
+		StoredValue=`WordZero;
+		
+		CPSR=`WordZero;
+		SPSR=`WordZero;
+		ALUPSRType=`ALUPSRType_Null;
+		MEMPSRType=`MEMPSRType_Null;
+		
+		InstructionCondition=`ConditionField_NV;
+		
+		NextAddressGoWithInstruction2ALU=`AddressBusZero;
+		
+		IsBranch=1'b0;
+		
+		IsLoadToPC=1'b0;
+		
+		Valid=1'b0;
+		
+//		ALUOwnCanGo=1'b1;
+		
+		IfChangeState=1'b0;
+		ChangeStateAction=5'b00000;
+		
+		LongMulSig=1'b0;
+		
+		//delay branch signal
+		MEMStoreDelayBranchTarget=1'b0;
+		MEMDelayBranch=1'b0;
+		
+		MemAccessUserBankRegister=1'b0;
+		
+		MEMHalfWordTransferType=2'b00;
+		
+		SWPByteOrWord=1'b0;
+	end
+	else
+	begin
+		ALUType=Next_ALUType;
+		LeftOperand=Next_LeftOperand;
+		RightOperand=Next_RightOperand;
+		RightShiftType=Next_RightShiftType;
+		RightShiftCount=Next_RightShiftCount;
+		RightShiftCountHighBits=Next_RightShiftCountHighBits;
+		RightShiftCountInReg=Next_RightShiftCountInReg;
+		Operand2IsReg=Next_Operand2IsReg;
+
+		TargetRegister=Next_TargetRegister;
+
+		SimpleALUType=Next_SimpleALUType;
+		SimpleALUTargetRegister=Next_SimpleALUTargetRegister;
+
+		MEMType=Next_MEMType;
+		MEMTargetRegister=Next_MEMTargetRegister;
+		SimpleMEMType=Next_SimpleMEMType;
+		SimpleMEMTargetRegister=Next_SimpleMEMTargetRegister;
+
+		StoredValue=Next_StoredValue;
+		
+		CPSR=Next_CPSR;
+		SPSR=Next_SPSR;
+		ALUPSRType=Next_ALUPSRType;
+		MEMPSRType=Next_MEMPSRType;
+		
+		InstructionCondition=Next_InstructionCondition;
+
+		NextAddressGoWithInstruction2ALU=Next_NextAddressGoWithInstruction2ALU;
+		
+		IsBranch=Next_IsBranch;
+		
+		IsLoadToPC=Next_IsLoadToPC;
+		
+		Valid=Next_Valid;
+		
+//		ALUOwnCanGo=Next_ALUOwnCanGo;
+
+		IfChangeState=Next_IfChangeState;
+		ChangeStateAction=Next_ChangeStateAction;
+
+		LongMulSig=Next_LongMulSig;
+
+		//delay branch signal
+		MEMStoreDelayBranchTarget=Next_MEMStoreDelayBranchTarget;
+		MEMDelayBranch=Next_MEMDelayBranch;
+		
+		MemAccessUserBankRegister=Next_MemAccessUserBankRegister;
+		
+		MEMHalfWordTransferType=Next_MEMHalfWordTransferType;
+		
+		SWPByteOrWord=Next_SWPByteOrWord;
+	end
+end
+
+//decide left operand
+assign	LeftUseImm=in_ALULeftFromImm;
+assign	LeftUseALUMain=(out_ALUWriteEnable==1'b1 && out_ALUTargetRegister==in_ALULeftRegister)?1'b1:1'b0;
+assign	LeftUseALUSimple=(out_ALUWriteEnable==1'b1 && out_SimpleALUTargetRegister==in_ALULeftRegister)?1'b1:1'b0;
+assign	LeftUseMEMMain=(in_MEMWriteEnable==1'b1 && in_MEMTargetRegister2WB==in_ALULeftRegister)?1'b1:1'b0;
+assign	LeftUseMEMSimple=(in_MEMWriteEnable==1'b1 && in_SimpleMEMTargetRegister2WB==in_ALULeftRegister)?1'b1:1'b0;
+assign	LeftUseWBMain=(in_WBWriteEnable==1'b1 && in_WBMainTargetRegister==in_ALULeftRegister)?1'b1:1'b0;
+assign	LeftUseWBSimple=(in_WBWriteEnable==1'b1 && in_WBSimpleTargetRegister==in_ALULeftRegister)?1'b1:1'b0;
+
+//select 4 from 8
+assign	Left1=(LeftUseImm==1'b1)?in_ALULeftReadBus:out_ALUWriteBus;
+assign	Left2=(LeftUseALUSimple==1'b1)?out_SimpleALUResult:in_MEMWriteResult;
+assign	Left3=(LeftUseMEMSimple==1'b1)?in_SimpleMEMResult:in_WBMainResult;
+assign	Left4=(LeftUseWBSimple==1'b1)?in_WBSimpleResult:in_ALULeftReadBus;
+
+//select 2 from 4
+assign	Left12=((LeftUseImm | LeftUseALUMain)==1'b1)?Left1:Left2;
+assign	Left34=((LeftUseMEMSimple | LeftUseWBMain)==1'b1)?Left3:Left4;
+
+//select 1 from 2
+assign	Left1234=((LeftUseImm | LeftUseALUMain | LeftUseALUSimple | LeftUseMEMMain)==1'b1)?Left12:Left34;
+
+
+//decide right operand
+assign	RightUseImm=in_ALURightFromImm;
+assign	RightUseALUMain=(out_ALUWriteEnable==1'b1 && out_ALUTargetRegister==in_ALURightRegister)?1'b1:1'b0;
+assign	RightUseALUSimple=(out_ALUWriteEnable==1'b1 && out_SimpleALUTargetRegister==in_ALURightRegister)?1'b1:1'b0;
+assign	RightUseMEMMain=(in_MEMWriteEnable==1'b1 && in_MEMTargetRegister2WB==in_ALURightRegister)?1'b1:1'b0;
+assign	RightUseMEMSimple=(in_MEMWriteEnable==1'b1 && in_SimpleMEMTargetRegister2WB==in_ALURightRegister)?1'b1:1'b0;
+assign	RightUseWBMain=(in_WBWriteEnable==1'b1 && in_WBMainTargetRegister==in_ALURightRegister)?1'b1:1'b0;
+assign	RightUseWBSimple=(in_WBWriteEnable==1'b1 && in_WBSimpleTargetRegister==in_ALURightRegister)?1'b1:1'b0;
+
+//select 4 from 8
+assign	Right1=(RightUseImm==1'b1)?in_ALURightReadBus:out_ALUWriteBus;
+assign	Right2=(RightUseALUSimple==1'b1)?out_SimpleALUResult:in_MEMWriteResult;
+assign	Right3=(RightUseMEMSimple==1'b1)?in_SimpleMEMResult:in_WBMainResult;
+assign	Right4=(RightUseWBSimple==1'b1)?in_WBSimpleResult:in_ALURightReadBus;
+
+//select 2 from 4
+assign	Right12=((RightUseImm | RightUseALUMain)==1'b1)?Right1:Right2;
+assign	Right34=((RightUseMEMSimple | RightUseWBMain)==1'b1)?Right3:Right4;
+
+//select 1 from 2
+assign	Right1234=((RightUseImm | RightUseALUMain | RightUseALUSimple | RightUseMEMMain)==1'b1)?Right12:Right34;
+
+
+//decide third operand
+assign	ThirdUseImm=in_ALUThirdFromImm;
+assign	ThirdUseALUMain=(out_ALUWriteEnable==1'b1 && out_ALUTargetRegister==in_ALUThirdRegister)?1'b1:1'b0;
+assign	ThirdUseALUSimple=(out_ALUWriteEnable==1'b1 && out_SimpleALUTargetRegister==in_ALUThirdRegister)?1'b1:1'b0;
+assign	ThirdUseMEMMain=(in_MEMWriteEnable==1'b1 && in_MEMTargetRegister2WB==in_ALUThirdRegister)?1'b1:1'b0;
+assign	ThirdUseMEMSimple=(in_MEMWriteEnable==1'b1 && in_SimpleMEMTargetRegister2WB==in_ALUThirdRegister)?1'b1:1'b0;
+assign	ThirdUseWBMain=(in_WBWriteEnable==1'b1 && in_WBMainTargetRegister==in_ALUThirdRegister)?1'b1:1'b0;
+assign	ThirdUseWBSimple=(in_WBWriteEnable==1'b1 && in_WBSimpleTargetRegister==in_ALUThirdRegister)?1'b1:1'b0;
+
+//select 4 from 8
+assign	Third1=(ThirdUseImm==1'b1)?in_ALUThirdReadBus:out_ALUWriteBus;
+assign	Third2=(ThirdUseALUSimple==1'b1)?out_SimpleALUResult:in_MEMWriteResult;
+assign	Third3=(ThirdUseMEMSimple==1'b1)?in_SimpleMEMResult:in_WBMainResult;
+assign	Third4=(ThirdUseWBSimple==1'b1)?in_WBSimpleResult:in_ALUThirdReadBus;
+
+//select 2 from 4
+assign	Third12=((ThirdUseImm | ThirdUseALUMain)==1'b1)?Third1:Third2;
+assign	Third34=((ThirdUseMEMSimple | ThirdUseWBMain)==1'b1)?Third3:Third4;
+
+//select 1 from 2
+assign	Third1234=((ThirdUseImm | ThirdUseALUMain | ThirdUseALUSimple | ThirdUseMEMMain)==1'b1)?Third12:Third34;
+
+
+//determine the next state of pipelne register
+//and out_ALUOwnCanGo
+always @(in_MEMCanGo		or
+		//current state
+		Valid			or
+		ALUType		or
+		LeftOperand		or
+		RightOperand	or
+		RightShiftType	or
+		RightShiftCount	or
+		RightShiftCountHighBits	or
+		RightShiftCountInReg	or
+		Operand2IsReg		or
+		TargetRegister	or
+		SimpleALUType	or
+		SimpleALUTargetRegister	or
+		StoredValue	or
+		MEMType	or
+		MEMTargetRegister	or
+		SimpleMEMType	or
+		SimpleMEMTargetRegister	or
+		CPSR			or
+		SPSR			or
+		ALUPSRType		or
+		MEMPSRType		or
+		InstructionCondition	or
+		NextAddressGoWithInstruction2ALU	or
+		IsBranch		or
+		IsLoadToPC		or
+//		ALUOwnCanGo		or
+		IfChangeState		or
+		ChangeStateAction	or
+		LongMulSig		or
+		MEMStoreDelayBranchTarget	or
+		MEMDelayBranch		or
+		MemAccessUserBankRegister	or
+		MEMHalfWordTransferType	or
+		SWPByteOrWord	or
+		//signal relate to write
+		out_ALUWriteEnable or
+		out_ALUWriteBus	or		//write result
+		out_CPSR	or
+		out_SPSR	or
+		out_ALUTargetRegister	or	//write to which register
+		out_ALUOwnCanGo		or
+		out_SimpleALUTargetRegister	or
+		out_SimpleALUResult	or
+		out_ALUPSRType	or
+		out_ChangePC	or
+		//below is signal relate to new operation
+		in_ALUEnable	or
+		in_ALUType		or
+		in_ALULeftRegister	or
+		in_ALURightRegister	or
+		in_ALUThirdRegister	or
+		in_ALULeftFromImm		or
+		in_ALURightFromImm	or
+		in_ALUThirdFromImm	or
+		in_CPSRFromImm		or
+		in_SPSRFromImm		or
+		in_ALURightShiftType	or
+		in_ALULeftReadBus		or
+		in_ALURightReadBus	or
+		in_ALUThirdReadBus	or
+		in_ALUCPSRReadBus	or
+		in_ALUSPSRReadBus	or
+		in_ALUTargetRegister	or
+		in_SimpleALUType		or
+		in_SimpleALUTargetRegister or
+		in_ALUMisc	or
+		in_ALUPSRType	or
+		in_MEMType			or
+		in_MEMTargetRegister	or
+		in_SimpleMEMType		or
+		in_SimpleMEMTargetRegister	or
+		in_MEMPSRType		or
+		in_NextAddressGoWithInstruction2ALU	or
+		//below is signal relate to forward operand from mem stage
+		in_MEMWriteEnable		or
+		in_MEMWriteResult		or
+		in_MEMCPSR2WB			or
+		in_MEMSPSR2WB			or
+		in_MEMTargetRegister2WB or
+		in_SimpleMEMResult	or
+		in_SimpleMEMTargetRegister2WB	or
+		in_MEMPSRType2WB	or
+		in_MEMChangePC		or
+		//these are signal relate to forwarding from write back stage
+		in_WBWriteEnable	or
+		in_WBMainResult		or
+		in_WBMainTargetRegister	or
+		in_WBSimpleResult	or
+		in_WBSimpleTargetRegister	or
+		in_WBCPSR	or
+		in_WBSPSR	or
+		Left1234	or
+		Right1234	or
+		Third1234
+		)
+begin
+	if(in_MEMCanGo==1'b1 && out_ALUOwnCanGo==1'b1)
+	begin
+		//alu can go
+		if(in_ALUEnable==1'b1 && out_ChangePC==1'b0 && in_MEMChangePC==1'b0)
+		begin
+			Next_Valid=1'b1;
+			Next_ALUType=in_ALUType;
+			
+			//deal with left operand
+			Next_LeftOperand=Left1234;
+
+			Next_Operand2IsReg=~in_ALURightFromImm;
+			//deal with right operand
+			Next_RightOperand=Right1234;
+
+			Next_RightShiftType=in_ALURightShiftType;
+
+			Next_StoredValue=in_ALUThirdReadBus;
+			//deal with shift count
+			if(in_ALUMisc[0]==1'b1 || in_ALUType==`ALUType_Mla || in_ALUType==`ALUType_SWP)
+			begin//when there is a mla,then the added operand will be store in storedvalue
+				//shift count come from in_ALUMisc
+				//current there is only store operation can generate this condition
+				//for a store,base come in left register
+				//offset come from right register
+				//shift count come from in_ALUMisc[5:1]
+				//stored value come from third register read
+				Next_RightShiftCount=in_ALUMisc[5:1];
+				Next_RightShiftCountHighBits=3'b000;
+				Next_RightShiftCountInReg=1'b0;
+				//deal with forward of stored value
+				Next_StoredValue=Third1234;
+			end
+			else
+			begin
+				//read shift count from bus
+				Next_RightShiftCount=Third1234[`Def_ShiftCountWidth-1:0];
+				Next_RightShiftCountHighBits=Third1234[7:5];
+				Next_RightShiftCountInReg=~in_ALUThirdFromImm;
+			end
+
+
+			if(in_CPSRFromImm==1'b1 || out_ALUWriteEnable==1'b1)
+			begin
+				if(in_CPSRFromImm==1'b1)
+				begin
+					//cpsr is from imm,
+					//read it from bus
+					//do not forward
+					Next_CPSR=in_ALUCPSRReadBus;
+				end
+				else
+				begin
+					Next_CPSR=out_CPSR;
+				end
+			end
+			else
+			begin
+				if(in_MEMWriteEnable==1'b1)
+				begin
+					Next_CPSR=in_MEMCPSR2WB;
+				end
+				else if(in_WBWriteEnable==1'b1)
+				begin
+					Next_CPSR=in_WBCPSR;
+				end
+				else
+				begin
+					//come direct from register without forward
+					Next_CPSR=in_ALUCPSRReadBus;
+				end
+			end
+
+			if(in_SPSRFromImm==1'b1 || out_ALUWriteEnable==1'b1)
+			begin
+				if(in_SPSRFromImm==1'b1)
+				begin
+					//spsr is from imm,
+					//read it from bus
+					//do not forward
+					Next_SPSR=in_ALUSPSRReadBus;
+				end
+				else
+				begin
+					Next_SPSR=out_SPSR;
+				end
+			end
+			else
+			begin
+				if(in_MEMWriteEnable==1'b1)
+				begin
+					Next_SPSR=in_MEMSPSR2WB;
+				end
+				else if(in_WBWriteEnable==1'b1)
+				begin
+					Next_SPSR=in_WBSPSR;
+				end
+				else
+				begin
+					//come direct from register without forward
+					Next_SPSR=in_ALUSPSRReadBus;
+				end
+			end
+			
+			//deal with spsr forward
+			Next_TargetRegister=in_ALUTargetRegister;
+			
+			Next_SimpleALUType=in_SimpleALUType;
+			Next_SimpleALUTargetRegister=in_SimpleALUTargetRegister;
+
+			Next_MEMType=in_MEMType;
+			Next_MEMTargetRegister=in_MEMTargetRegister;
+			Next_SimpleMEMType=in_SimpleMEMType;
+			Next_SimpleMEMTargetRegister=in_SimpleMEMTargetRegister;
+			
+			//pass psr operation type to next stage mem
+			Next_ALUPSRType=in_ALUPSRType;
+			Next_MEMPSRType=in_MEMPSRType;
+			
+			Next_InstructionCondition=in_ALUMisc[31:28];
+			
+			Next_NextAddressGoWithInstruction2ALU=in_NextAddressGoWithInstruction2ALU;
+			
+			Next_IsBranch=in_ALUMisc[6];
+			
+			Next_IsLoadToPC=in_ALUMisc[7];
+			
+//			Next_ALUOwnCanGo=1'b1;
+			
+			Next_IfChangeState=in_ALUMisc[8];
+			Next_ChangeStateAction=in_ALUMisc[13:9];
+			
+			Next_LongMulSig=in_ALUMisc[17];
+			
+			Next_MEMStoreDelayBranchTarget=in_ALUMisc[15];
+			Next_MEMDelayBranch=in_ALUMisc[14];
+			
+			Next_MemAccessUserBankRegister=in_ALUMisc[16];
+			
+			Next_MEMHalfWordTransferType=in_ALUMisc[19:18];
+			
+			Next_SWPByteOrWord=in_ALUMisc[20];
+		end
+		else
+		begin
+			//no new operation or previous instruction modify pc
+			Next_Valid=1'b0;
+			Next_ALUType=`ALUType_Null;
+			Next_LeftOperand=`WordZero;
+			Next_RightOperand=`WordZero;
+			Next_RightShiftType=`Def_ShiftTypeZero;
+			Next_RightShiftCount=`Def_ShiftCountZero;
+			Next_RightShiftCountHighBits=3'b000;
+			Next_RightShiftCountInReg=1'b0;
+			Next_Operand2IsReg=1'b0;
+			Next_TargetRegister=`Def_LinkRegister;
+
+			
+			Next_CPSR=`WordZero;
+			Next_SPSR=`WordZero;
+			Next_StoredValue=`WordZero;
+			
+			Next_SimpleALUType=`ALUType_Null;
+			Next_SimpleALUTargetRegister=`Def_LinkRegister;
+
+			Next_MEMType=`MEMType_Null;
+			Next_MEMTargetRegister=`Def_LinkRegister;
+			Next_SimpleMEMType=`MEMType_Null;
+			Next_SimpleMEMTargetRegister=`Def_LinkRegister;
+
+			Next_ALUPSRType=`ALUPSRType_Null;
+			Next_MEMPSRType=`MEMPSRType_Null;
+			
+			Next_InstructionCondition=`ConditionField_NV;
+			Next_NextAddressGoWithInstruction2ALU=`AddressBusZero;
+			
+			Next_IsBranch=1'b0;
+			
+			Next_IsLoadToPC=1'b0;
+			
+//			Next_ALUOwnCanGo=1'b1;
+
+			Next_IfChangeState=1'b0;
+			Next_ChangeStateAction=5'b00000;
+
+			Next_LongMulSig=1'b0;
+
+			Next_MEMStoreDelayBranchTarget=1'b0;
+			Next_MEMDelayBranch=1'b0;
+
+			Next_MEMStoreDelayBranchTarget=1'b0;
+			Next_MEMDelayBranch=1'b0;
+			
+			Next_MemAccessUserBankRegister=1'b0;
+			
+			Next_MEMHalfWordTransferType=2'b00;
+			
+			Next_SWPByteOrWord=1'b0;
+		end
+
+	end
+	else
+	begin
+		//alu can not go
+		//save current state
+		Next_Valid=Valid;
+		Next_ALUType=ALUType;
+		Next_LeftOperand=LeftOperand;
+		Next_RightOperand=RightOperand;
+		Next_RightShiftType=RightShiftType;
+		Next_RightShiftCount=RightShiftCount;
+		Next_RightShiftCountHighBits=RightShiftCountHighBits;
+		Next_RightShiftCountInReg=RightShiftCountInReg;
+		Next_Operand2IsReg=Operand2IsReg;
+		Next_TargetRegister=TargetRegister;
+
+		Next_SimpleALUType=SimpleALUType;
+		Next_SimpleALUTargetRegister=SimpleALUTargetRegister;
+
+		Next_MEMType=MEMType;
+		Next_MEMTargetRegister=MEMTargetRegister;
+		Next_SimpleMEMType=SimpleMEMType;
+		Next_SimpleMEMTargetRegister=SimpleMEMTargetRegister;
+
+		Next_CPSR=CPSR;
+		Next_SPSR=SPSR;
+		Next_StoredValue=StoredValue;
+
+
+		Next_ALUPSRType=ALUPSRType;
+		Next_MEMPSRType=MEMPSRType;
+
+		Next_InstructionCondition=InstructionCondition;
+		
+		Next_NextAddressGoWithInstruction2ALU=NextAddressGoWithInstruction2ALU;
+		
+		Next_IsBranch=IsBranch;
+		
+		Next_IsLoadToPC=IsLoadToPC;
+		
+//		Next_ALUOwnCanGo=ALUOwnCanGo;
+
+		Next_IfChangeState=IfChangeState;
+		Next_ChangeStateAction=ChangeStateAction;
+		
+		Next_LongMulSig=LongMulSig;
+
+		Next_MEMStoreDelayBranchTarget=MEMStoreDelayBranchTarget;
+		Next_MEMDelayBranch=MEMDelayBranch;
+		
+		Next_MemAccessUserBankRegister=MemAccessUserBankRegister;
+		
+		Next_MEMHalfWordTransferType=MEMHalfWordTransferType;
+		
+		Next_SWPByteOrWord=SWPByteOrWord;
+	end
+end
+
+
+
+//assign new computing
+assign	ALUComb_ALUType=ALUType;
+assign	ALUComb_LeftOperand=LeftOperand;
+assign	ALUComb_RightOperand=RightOperand;
+assign	ALUComb_ThirdOperand=StoredValue;
+assign	ALUComb_RightOperandShiftType=RightShiftType;
+assign	ALUComb_RightOperandShiftCount=RightShiftCount;
+assign	ALUComb_ShiftCountInReg=RightShiftCountInReg;
+assign	ALUComb_ShiftCountHigh3Bit=RightShiftCountHighBits;
+assign	ALUComb_Operand2IsReg=Operand2IsReg;
+assign	ALUComb_Carry=CPSR[`CarryPos];
+assign	ALUComb_Overflow=CPSR[`OverflowPos];
+assign	ALUComb_Neg=CPSR[`NegPos];
+assign	ALUComb_Zero=CPSR[`ZeroPos];
+assign	ALUComb_LongMulSig=LongMulSig;
+
+//assign output result
+assign	out_ALUWriteBus=(out_ALUWriteEnable==1'b1)?ALUCombResult:`WordZero;
+assign	out_ALUTargetRegister=(out_ALUWriteEnable==1'b1 && out_ALUOwnCanGo==1'b1)?TargetRegister:`Def_LinkRegister;
+assign	out_ALUPSRType=ALUPSRType;
+assign	out_ALUOwnCanGo=1'b1;
+
+
+//pass these mem operation from decoder to mem stage
+assign	out_MEMType=MEMType;
+assign	out_MEMTargetRegister=MEMTargetRegister;
+assign	out_SimpleMEMType=SimpleMEMType;
+assign	out_SimpleMEMTargetRegister=(Valid==1'b1 && out_ALUOwnCanGo==1'b1)?SimpleMEMTargetRegister:`Def_LinkRegister;
+assign	out_StoredValue=StoredValue;
+assign	out_MEMPSRType=MEMPSRType;
+assign	out_IsLoadToPC=IsLoadToPC;
+assign	out_IfChangeState=IfChangeState;
+assign	out_ChangeStateAction=ChangeStateAction;
+assign	out_MEMStoreDelayBranchTarget=MEMStoreDelayBranchTarget;
+assign	out_MEMDelayBranch=MEMDelayBranch;
+assign	out_MemAccessUserBankRegister=MemAccessUserBankRegister;
+assign	out_MEMHalfWordTransferType=MEMHalfWordTransferType;
+assign	out_SWPByteOrWord=SWPByteOrWord;
+
+//deal with simple ALU
+always @(SimpleALUType or
+		LeftOperand or
+		RightOperand or
+		SimpleALUTargetRegister or
+		CPSR or
+		SPSR or
+		NextAddressGoWithInstruction2ALU	or
+		ALUHighResult
+)
+begin
+	case (SimpleALUType)
+	`ALUType_Mvl:
+		out_SimpleALUResult=LeftOperand;
+	`ALUType_Mvr:
+		out_SimpleALUResult=RightOperand;
+	`ALUType_MvCPSR:
+		out_SimpleALUResult=CPSR;
+	`ALUType_MvSPSR:
+		out_SimpleALUResult=SPSR;
+	`ALUType_MvNextInstructionAddress:
+		out_SimpleALUResult={NextAddressGoWithInstruction2ALU[`AddressBusWidth-1:1],CPSR[`ThumbPos]};
+	`ALUType_MovMULLHigh:
+		out_SimpleALUResult=ALUHighResult;
+	default:
+		out_SimpleALUResult=`WordZero;
+	endcase
+	out_SimpleALUTargetRegister=SimpleALUTargetRegister;
+end
+
+//deal with psr thread
+always @(in_Neg or
+	in_Zero or
+	in_Carry or
+	in_Overflow or
+	CPSR or
+	SPSR or
+	ALUPSRType	or
+	ALUCombResult	or
+	RightOperand	or
+	IfChangeState	or
+	ChangeStateAction
+)
+begin
+	case(ALUPSRType)
+	`ALUPSRType_WriteConditionCode:
+	begin
+		//for normal alu instruction to write condition code
+		out_CPSR={in_Neg,in_Zero,in_Carry,in_Overflow,CPSR[27:0]};
+		out_SPSR=SPSR;
+	end
+	`ALUPSRType_WriteCPSR:
+	begin
+		//for psr transfer to write cpsr
+		out_CPSR=CPSR;
+		out_SPSR=SPSR;
+	end
+	`ALUPSRType_SPSR2CPSR:
+	begin
+		//write spsr to cpsr
+		out_CPSR=SPSR;
+		out_SPSR=SPSR;
+	end
+	`ALUPSRType_WriteSPSR:
+	begin
+		//write whole spsr
+		out_CPSR=CPSR;
+		out_SPSR=SPSR;
+	end
+	`ALUPSRType_Right2CPSR:
+	begin
+		out_CPSR=RightOperand;
+		out_SPSR=SPSR;
+	end
+	`ALUPSRType_Right2SPSR:
+	begin
+		out_CPSR=CPSR;
+		out_SPSR=RightOperand;
+	end
+	`ALUPSRType_ALUResultAsConditionCode2CPSR:
+	begin
+		//add alu result as condition code to cpsr
+		out_CPSR={ALUCombResult[31:28],CPSR[27:0]};
+		out_SPSR=SPSR;
+	end
+	`ALUPSRType_ALUResultAsConditionCode2SPSR:
+	begin
+		//add alu result as condition code to spsr
+		out_SPSR={ALUCombResult[31:28],SPSR[27:0]};
+		out_CPSR=CPSR;
+	end
+	`ALUPSRType_CPSR2SPSR:
+	begin
+		out_SPSR=CPSR;
+		out_CPSR=CPSR;
+	end
+	`ALUPSRType_ModifyThumbState:
+	begin
+		out_SPSR=SPSR;
+		out_CPSR=CPSR;
+		//the address bit 0 is new thumb state
+		out_CPSR[`ThumbPos]=RightOperand[0];
+	end
+	default:
+	begin
+		out_CPSR=CPSR;
+		out_SPSR=SPSR;
+	end
+	endcase
+	
+	if(IfChangeState==1'b1)
+	begin
+		//an exception arise
+		//change mode
+		out_CPSR[4:0]=ChangeStateAction;
+		//switch to ARM state
+		out_CPSR[`ThumbPos]=1'b0;
+		//disable interrupt
+		if(ChangeStateAction==`MODE_IRQ)
+		begin
+			//IRQ can only mask out IRQ, can not mask out FIQ
+			out_CPSR[`IrqPos]=1'b1;
+			out_CPSR[`FiqPos]=CPSR[`FiqPos];
+		end
+		else if(ChangeStateAction==`MODE_FIQ)
+		begin
+			//FIQ can mask out further IRQ and FIQ
+			out_CPSR[`IrqPos]=1'b1;
+			out_CPSR[`FiqPos]=1'b1;
+		end
+		else
+		begin
+			//the mask remain, do not change
+			out_CPSR[`IrqPos]=CPSR[`IrqPos];
+			out_CPSR[`FiqPos]=CPSR[`FiqPos];
+		end
+			
+	end
+end
+
+
+//determine if the condition field is satisfied
+always @(CPSR or
+	Valid or
+	InstructionCondition
+)
+begin
+	//defalut is 1'b0
+	out_ALUWriteEnable=1'b0;
+	if(Valid==1'b0)
+	begin
+		out_ALUWriteEnable=1'b0;
+	end
+	else
+	begin
+		//a vlid instruction
+		//but still do not decide if it can satisfy the condition field 
+		case (InstructionCondition)
+		`ConditionField_EQ:			//Z set(equal)
+		begin
+			if(CPSR[`ZeroPos]==1'b1)
+				out_ALUWriteEnable=1'b1;
+		end
+		`ConditionField_NE:			//Z clear(not equal)
+		begin
+			if(CPSR[`ZeroPos]==1'b0)
+				out_ALUWriteEnable=1'b1;
+		end
+		`ConditionField_CS:			//C set(unsigned higher or same)
+		begin
+			if(CPSR[`CarryPos]==1'b1)
+				out_ALUWriteEnable=1'b1;
+		end
+		`ConditionField_CC:			//C clear(unsigned lower)
+		begin
+			if(CPSR[`CarryPos]==1'b0)
+				out_ALUWriteEnable=1'b1;
+		end
+		`ConditionField_MI:			//N set(negative)
+		begin
+			if(CPSR[`NegPos]==1'b1)
+				out_ALUWriteEnable=1'b1;
+		end
+		`ConditionField_PL:			//N clear(positive or zero)
+		begin
+			if(CPSR[`NegPos]==1'b0)
+				out_ALUWriteEnable=1'b1;
+		end
+		`ConditionField_VS:			//V set(overflow)
+		begin
+			if(CPSR[`OverflowPos]==1'b1)
+				out_ALUWriteEnable=1'b1;
+		end
+		`ConditionField_VC:			//V clear(no overflow)
+		begin
+			if(CPSR[`OverflowPos]==1'b0)
+				out_ALUWriteEnable=1'b1;
+		end
+		`ConditionField_HI:			//C set and Z clear(unsigned higher,see ConditionField_CS)
+		begin
+			if(CPSR[`CarryPos]==1'b1 && CPSR[`ZeroPos]==1'b0)
+				out_ALUWriteEnable=1'b1;
+		end
+		`ConditionField_LS:			//C clear or Z set(unsigned lower or same see ConditionField_CC)
+		begin
+			if(CPSR[`CarryPos]==1'b0 || CPSR[`ZeroPos]==1'b1)
+				out_ALUWriteEnable=1'b1;
+		end
+		`ConditionField_GE:			//N set and V set, or N clear and V clear(greater or equal)
+		begin
+			if((CPSR[`NegPos]==1'b1 && CPSR[`OverflowPos]==1'b1) || (CPSR[`NegPos]==1'b0 && CPSR[`OverflowPos]==1'b0))
+				out_ALUWriteEnable=1'b1;
+		end
+		`ConditionField_LT:			//N set and V clear,or N clear and V set(less than)
+		begin
+			if((CPSR[`NegPos]==1'b1 && CPSR[`OverflowPos]==1'b0) || (CPSR[`NegPos]==1'b0 && CPSR[`OverflowPos]==1'b1))
+				out_ALUWriteEnable=1'b1;
+		end
+		`ConditionField_GT:			//Z clear, and either N set and V set, or N clear and V clear (greater than)
+		begin
+			if(CPSR[`ZeroPos]==1'b0 && ((CPSR[`NegPos]==1'b1 && CPSR[`OverflowPos]==1'b1) || (CPSR[`NegPos]==1'b0 && CPSR[`OverflowPos]==1'b0)))
+				out_ALUWriteEnable=1'b1;
+		end
+		`ConditionField_LE:			//Z set, or N set and V clear, or N clear and V set (less than or equal)
+		begin
+			if(CPSR[`ZeroPos]==1'b1 || (CPSR[`NegPos]==1'b1 && CPSR[`OverflowPos]==1'b0) || (CPSR[`NegPos]==1'b0 && CPSR[`OverflowPos]==1'b1))
+				out_ALUWriteEnable=1'b1;
+		end
+		`ConditionField_AL:			//always execute
+		begin
+			out_ALUWriteEnable=1'b1;
+		end
+		`ConditionField_NV:			//never execute
+		begin
+			out_ALUWriteEnable=1'b0;
+		end
+		endcase
+	end
+end
+
+//determine change pc in branch instruction
+always @(IsBranch	or
+	out_ALUWriteEnable	or
+	ALUCombResult
+)
+begin
+	if(IsBranch==1'b1)
+	begin
+		if(out_ALUWriteEnable==1'b1)
+		begin
+			out_ChangePC=1'b1;
+			out_NewPC={ALUCombResult[`WordWidth-1:2],out_CPSR[`ThumbPos]&ALUCombResult[1],1'b0};//half word align
+		end
+		else
+		begin
+			out_ChangePC=1'b0;
+			out_NewPC={ALUCombResult[`WordWidth-1:2],out_CPSR[`ThumbPos]&ALUCombResult[1],1'b0};
+		end
+	end
+	else
+	begin
+		out_ChangePC=1'b0;
+		out_NewPC={ALUCombResult[`WordWidth-1:2],out_CPSR[`ThumbPos]&ALUCombResult[1],1'b0};
+	end
+end
+
+
+endmodule

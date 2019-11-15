@@ -1,0 +1,659 @@
+module nnARMCore(//signal between bus2core and IF
+		Wait,			//if fetch ready?
+		Instruction,		//fetch back instruction
+		out_InstructionAddress,	//send out fetch address
+		//signal between mem and DataCacheController
+		out_MEMAccessAddress,		//data address go to data cache
+		DataBus_r,		//data value for read of memory
+		DataBus_f,		//data value write to memory
+		out_MEMAccessRequest,	//enable access to data cache
+		out_MEMAccessBW,			//1 means byte,0 means word
+		out_MEMAccessRW,			//1 means read,0 means write
+		out_DataCacheWait,		//wait signal come from data cache
+		out_MEMAccessHalfWordTransfer,
+		out_MEMAccessHalfWordType,
+		//interrupt signal
+		Fiq,
+		Irq,
+		clock,
+		reset);
+
+//these signal will never be use anymore
+//the signal between instruction cache and instruction prefetch
+//input [`InstructionCacheLineWidth-1:0] InstructionOut;
+//input InstructionWait;
+//output [`AddressBusWidth-1:0] PreFetchedAddress;
+//output PreFetchedRequest;
+
+//signal between mem and data cache
+output	[`AddressBusWidth-1:0]		out_MEMAccessAddress;
+output					out_MEMAccessRequest,
+					out_MEMAccessRW,
+					out_MEMAccessBW;
+					
+output					out_MEMAccessHalfWordTransfer;
+output	[1:0]				out_MEMAccessHalfWordType;
+
+input					out_DataCacheWait;
+
+input	[`WordWidth-1:0]		DataBus_r;
+output	[`WordWidth-1:0]		DataBus_f;
+
+
+
+
+input	Fiq,Irq;
+
+//global signal 
+input clock,reset;
+
+input Wait;
+input [`InstructionWidth-1:0] Instruction;
+output	[`AddressBusWidth-1:0] out_InstructionAddress;
+
+
+wire	[`AddressBusWidth-1:0] out_NextInstructionAddress;
+
+//signal between if and register file
+//use to update pc and read pc
+wire		out_FourthReadRegisterEnable;
+wire	[`Def_RegisterSelectWidth-1:0]	out_FourthReadRegisterNumber;
+wire	[`WordWidth-1:0] FourthReadBus;
+wire		out_SecondWriteRegisterEnable;
+wire	[`Def_RegisterSelectWidth-1:0]	out_SecondWriteRegisterNumber;
+//wire	[`WordWidth-1:0]	SecondWriteBus;
+
+//signal between if and id
+wire  [`InstructionWidth-1:0]	Pipeline_IFID;
+wire					Valid_Pipeline_IFID;
+wire	[`AddressBusWidth-1:0]	out_AddressGoWithInstruction;
+
+//signal between id and register file
+wire	out_LeftReadRegisterEnable,out_RightReadRegisterEnable,out_ThirdReadRegisterEnable;
+wire	[`Def_RegisterSelectWidth-1:0]	out_LeftReadRegisterNumber,out_RightReadRegisterNumber,out_ThirdReadRegisterNumber;
+
+//signal from Thumb decoder to arm decoder
+wire	out_NewA1;
+wire	[`InstructionWidth-1:0]	out_nnARMInstruction;
+wire	[`AddressBusWidth-1:0]	out_NewAddressGoWithInstruction;
+
+//signal between decoder and alu
+wire out_ALUEnable;
+wire [`ByteWidth-1:0] out_ALUType;
+//wire [`Def_RegisterSelectWidth-1:0] out_ALULeftRegister;
+//wire [`Def_RegisterSelectWidth-1:0] out_ALURightRegister;
+//wire [`Def_RegisterSelectWidth-1:0] out_ALUThirdRegister;
+wire out_ALULeftFromImm;
+wire out_ALURightFromImm;
+wire out_ALUThirdFromImm;
+wire out_CPSRFromImm;
+wire out_SPSRFromImm;
+wire [`Def_RegisterSelectWidth-1:0] out_ALUTargetRegister;
+wire [`Def_ShiftTypeWidth-1:0] out_ALURightShiftType;
+wire [`ByteWidth-1:0]	out_SimpleALUType;
+wire [`Def_RegisterSelectWidth-1:0]	out_SimpleALUTargetRegister;
+wire [`WordWidth-1:0]			out_ALUMisc;
+wire [`ByteWidth-1:0]			out_ALUPSRType;
+wire [`AddressBusWidth-1:0]		out_NextAddressGoWithInstruction2ALU;
+
+//signal bwtween decoder and mem
+wire			out_MEMEnable;
+wire [`ByteWidth-1:0]	out_MEMType;
+wire [`Def_RegisterSelectWidth-1:0]	out_MEMTargetRegister;
+wire [`ByteWidth-1:0]	out_SimpleMEMType;
+wire [`Def_RegisterSelectWidth-1:0]	out_SimpleMEMTargetRegister;
+wire [`ByteWidth-1:0]			out_MEMPSRType;
+
+//signal go from alu to mem
+wire	out_ALUWriteEnable;
+wire	[`WordWidth-1:0]  out_ALUWriteBus;
+wire	[`WordWidth-1:0]	out_ALUCPSR2MEM,out_ALUSPSR2MEM;
+wire	[`Def_RegisterSelectWidth-1:0] out_ALUTargetRegister2MEM;
+wire	[`WordWidth-1:0]			out_SimpleALUResult2MEM;
+wire	[`Def_RegisterSelectWidth-1:0]	out_SimpleALUTargetRegister2MEM;
+wire	[`ByteWidth-1:0]			out_MEMType2MEM;
+wire	[`Def_RegisterSelectWidth-1:0]			out_MEMTargetRegister2MEM;
+wire	[`ByteWidth-1:0]			out_SimpleMEMType2MEM;
+wire	[`Def_RegisterSelectWidth-1:0]			out_SimpleMEMTargetRegister2MEM;
+wire	[`WordWidth-1:0]				out_StoredValue;
+wire	[`ByteWidth-1:0]				out_MEMPSRType2MEM,out_ALUPSRType2MEM;
+wire						out_IsLoadToPC;
+wire						out_IfChangeState2MEM;
+wire	[4:0]					out_ChangeStateAction2MEM;
+wire						out_MEMStoreDelayBranchTarget2MEM,out_MEMDelayBranch2MEM;
+wire						out_MemAccessUserBankRegister2MEM;
+wire	[1:0]					out_MEMHalfWordTransferType2MEM;
+wire						out_SWPByteOrWord2MEM;
+
+//signal go out of mem and into wb and forward to alu
+wire			out_MEMWriteEnable;
+wire	[`WordWidth-1:0]	out_MEMWriteResult;
+wire	[`Def_RegisterSelectWidth-1:0]	out_MEMTargetRegister2WB;
+wire	[`WordWidth-1:0]			out_SimpleMEMResult2WB;
+wire	[`Def_RegisterSelectWidth-1:0]	out_SimpleMEMTargetRegister2WB;
+wire	[`ByteWidth-1:0]		out_MEMPSRType2WB;
+wire	[`WordWidth-1:0]		out_CPSR2WB,out_SPSR2WB;
+
+//signal go from writeback stage to register
+wire					out_WBWriteEnable;
+wire					out_IfChangeState2Reg;
+wire	[4:0]				out_ChangeStateAction2Reg;
+wire					out_MemAccessUserBankRegister2Reg;
+
+wire	[`WordWidth-1:0]		out_WriteBus2Reg;
+wire					out_WriteRegisterEnable2Reg;
+wire	[`Def_RegisterSelectWidth-1:0]	out_WriteRegisterNumber2Reg;
+
+wire	[`WordWidth-1:0]		out_ThirdWriteBus2Reg;
+wire					out_ThirdWriteRegisterEnable2Reg;
+wire	[`Def_RegisterSelectWidth-1:0]	out_ThirdWriteRegisterNumber2Reg;
+
+wire	[`WordWidth-1:0]		out_CPSR2PSR2Reg;
+wire					out_CPSRWriteEnable2Reg;
+wire	[`WordWidth-1:0]		out_SPSR2PSR2Reg;
+wire					out_SPSRWriteEnable2Reg;
+
+
+
+//connection between ALUShell and ALUComb
+wire	[`WordWidth-1:0]	ALUCombResult,ALUHighResult;
+wire			Carry,Zero,Neg,Overflow;
+wire	[`ByteWidth-1:0]	ALUComb_ALUType;
+wire	[`WordWidth-1:0]	ALUComb_LeftOperand,
+			ALUComb_RightOperand,
+			ALUComb_ThirdOperand;
+wire	[`Def_ShiftTypeWidth-1:0]	ALUComb_RightOperandShiftType;
+wire	[`Def_ShiftCountWidth-1:0]	ALUComb_RightOperandShiftCount;
+wire	[2:0]				ALUComb_ShiftCountHigh3Bit;
+wire					ALUComb_ShiftCountInReg;
+wire					ALUComb_Operand2IsReg;
+wire					ALUComb_Carry,ALUComb_Neg,ALUComb_Zero,ALUComb_Overflow;
+wire					ALUComb_LongMulSig;
+
+//who can go and who can not go
+wire	out_IFCanGo,out_IFOwnCanGo;
+wire	out_IDCanGo,out_IDOwnCanGo;
+wire	out_EXECanGo,out_EXEOwnCanGo;
+wire	out_MEMCanGo,out_MEMOwnCanGo;
+wire	out_WBCanGo,out_WBOwnCanGo;
+
+//psr register file
+wire	[`WordWidth-1:0]		out_CPSR,out_SPSR;
+wire					in_SPSRWriteEnable;
+wire					in_CPSRWriteEnable;
+wire	[`WordWidth-1:0]		out_CPSRWriteValue,out_SPSRWriteValue;
+wire	[4:0]				out_ChangeStateAction2WB;
+wire					out_IfChangeState2WB;
+wire					out_MemAccessUserBankRegister2WB;
+
+//alu send out these signal to if to update pc
+wire					out_ChangePC;
+wire	[`AddressBusWidth-1:0]		out_NewPC;
+
+//mem send out these signal to if to update pc
+wire					out_MEMChangePC;
+wire	[`AddressBusWidth-1:0]		out_MEMNewPC;
+
+//fresh cpsr
+wire	[`WordWidth-1:0]		out_CPSR_Fresh;
+wire					out_IsInPrivilegedMode;
+
+//global signal
+wire [`WordWidth-1:0] LeftReadBus,RightReadBus,ThirdReadBus,WriteBus,SecondWriteBus,ThirdWriteBus;
+wire	[`WordWidth-1:0]	mux_LeftReadBus,dec_LeftReadBus,reg_LeftReadBus;
+wire	[`WordWidth-1:0]	mux_RightReadBus,dec_RightReadBus,reg_RightReadBus;
+wire	[`WordWidth-1:0]	mux_ThirdReadBus,dec_ThirdReadBus,reg_ThirdReadBus;
+
+wire WriteRegisterEnable,ThirdWriteRegisterEnable;
+wire [`Def_RegisterSelectWidth-1:0] WriteRegisterNumber,ThirdWriteRegisterNumber;
+
+//wire between decoder and InterruptPriority
+wire	TrueFiq,TrueIrq;
+
+PSR_Fresh		inst_PSR_Fresh(	//varies CPSR input
+			.in_CPSR_StatusRegisters(out_CPSR),	//cpsr come from StatusRegisters
+			.in_CPSR_ALUShell(out_ALUCPSR2MEM),	//CPSR come from ALUShell stage
+			.in_ALUWriteEnable(out_ALUWriteEnable),	// if current alu have valid output
+			.in_CPSR_MEM(out_CPSR2WB),		//cpsr come from MEM stage
+			.in_MEMWriteEnable(out_MEMWriteEnable),	//if current mem have valid output
+			.in_CPSR_WB(out_CPSR2PSR2Reg),
+			.in_WBWriteEnable(out_WBWriteEnable),
+		
+			//output of fresh cpsr
+			.out_CPSR_Fresh(out_CPSR_Fresh),
+			.out_IsInPrivilegedMode(out_IsInPrivilegedMode)
+);
+
+InterruptPriority	inst_InterruptPriority(//interrupt signal
+			.Fiq(Fiq),
+			.Irq(Irq),
+			//interrupt mask
+			.FiqDisable(out_CPSR_Fresh[`FiqPos]),
+			.IrqDisable(out_CPSR_Fresh[`IrqPos]),
+			//output interrupt signal
+			.TrueFiq(TrueFiq),
+			.TrueIrq(TrueIrq)
+			);
+
+CanGoGen		inst_CanGoGen(.out_IFCanGo(out_IFCanGo),
+					.out_IDCanGo(out_IDCanGo),
+					.out_EXECanGo(out_EXECanGo),
+					.out_MEMCanGo(out_MEMCanGo),
+					.out_WBCanGo(out_WBCanGo),
+					.in_IFOwnCanGo(out_IFOwnCanGo),
+					.in_IDOwnCanGo(out_IDOwnCanGo),
+					.in_EXEOwnCanGo(out_EXEOwnCanGo),
+					.in_MEMOwnCanGo(out_MEMOwnCanGo),
+					.in_WBOwnCanGo(out_WBOwnCanGo)
+);
+
+StatusRegisters		inst_StatusRegisters(	//change of state
+			.in_IfChangeState(out_IfChangeState2Reg),
+			.in_ChangeStateAction(out_ChangeStateAction2Reg),
+			//write to register
+			.in_CPSRWriteEnable(out_CPSRWriteEnable2Reg),
+			.in_CPSRWriteValue(out_CPSR2PSR2Reg),
+			.in_SPSRWriteEnable(out_SPSRWriteEnable2Reg),
+			.in_SPSRWriteValue(out_SPSR2PSR2Reg),
+			//output of status register
+			.out_CPSR(out_CPSR),
+			.out_SPSR(out_SPSR),
+			.clock(clock),
+			.reset(reset)
+);
+
+
+RegisterFile  inst_RegisterFile(	//change of state
+			.in_IfChangeState(out_IfChangeState2Reg),
+			.in_MemAccessUserBankRegister2WB(out_MemAccessUserBankRegister2Reg),
+			.in_ChangeStateAction(out_ChangeStateAction2Reg),
+			.in_LeftReadEnable(out_LeftReadRegisterEnable),
+			.in_LeftReadRegisterNumber(out_LeftReadRegisterNumber),
+			.out_LeftReadBus(reg_LeftReadBus),
+			.in_RightReadEnable(out_RightReadRegisterEnable),
+			.in_RightReadRegisterNumber(out_RightReadRegisterNumber),
+			.out_RightReadBus(reg_RightReadBus),
+			.in_ThirdReadEnable(out_ThirdReadRegisterEnable),
+			.in_ThirdReadRegisterNumber(out_ThirdReadRegisterNumber),
+			.out_ThirdReadBus(reg_ThirdReadBus),
+			.in_FourthReadEnable(out_FourthReadRegisterEnable),
+			.in_FourthReadRegisterNumber(out_FourthReadRegisterNumber),
+			.out_FourthReadBus(FourthReadBus),
+			.in_WriteEnable(out_WriteRegisterEnable2Reg),
+			.in_WriteRegisterNumber(out_WriteRegisterNumber2Reg),
+			.in_WriteBus(out_WriteBus2Reg),
+			.in_SecondWriteEnable(out_SecondWriteRegisterEnable),
+			.in_SecondWriteRegisterNumber(out_SecondWriteRegisterNumber),
+			.in_SecondWriteBus(SecondWriteBus),
+			.in_ThirdWriteEnable(out_ThirdWriteRegisterEnable2Reg),
+			.in_ThirdWriteRegisterNumber(out_ThirdWriteRegisterNumber2Reg),
+			.in_ThirdWriteBus(out_ThirdWriteBus2Reg),
+			//the processor mode
+			.in_ProcessorMode(out_CPSR_Fresh[4:0]),
+			.clock(clock),
+			.reset(reset)
+);
+
+WriteBack	inst_WriteBack(//input from MEM to hold MEM result
+		.in_MEMWriteEnable(out_MEMWriteEnable),
+		.in_MainWriteEnable(WriteRegisterEnable),
+		.in_MainWriteRegister(WriteRegisterNumber),
+		.in_MainWriteResult(WriteBus),
+		.in_SimpleWriteEnable(ThirdWriteRegisterEnable),
+		.in_SimpleWriteRegister(ThirdWriteRegisterNumber),
+		.in_SimpleWriteResult(ThirdWriteBus),
+		.in_CPSR(out_CPSRWriteValue),
+		.in_CPSRWriteEnable(out_CPSRWriteEnable),
+		.in_SPSR(out_SPSRWriteValue),
+		.in_SPSRWriteEnable(out_SPSRWriteEnable),
+		.in_IfChangeState(out_IfChangeState2WB),
+		.in_ChangeStateAction(out_ChangeStateAction2WB),
+		.in_MemAccessUserBankRegister(out_MemAccessUserBankRegister2WB),
+		//output to register
+		.out_IfChangeState(out_IfChangeState2Reg),
+		.out_ChangeStateAction(out_ChangeStateAction2Reg),
+		.out_MemAccessUserBankRegister(out_MemAccessUserBankRegister2Reg),
+		//the first and third write bus
+		.out_WriteBus(out_WriteBus2Reg),
+		.out_WriteRegisterEnable(out_WriteRegisterEnable2Reg),
+		.out_WriteRegisterNumber(out_WriteRegisterNumber2Reg),
+		.out_ThirdWriteBus(out_ThirdWriteBus2Reg),
+		.out_ThirdWriteRegisterEnable(out_ThirdWriteRegisterEnable2Reg),
+		.out_ThirdWriteRegisterNumber(out_ThirdWriteRegisterNumber2Reg),
+		.out_CPSR2PSR(out_CPSR2PSR2Reg),
+		.out_CPSRWriteEnable(out_CPSRWriteEnable2Reg),
+		.out_SPSR2PSR(out_SPSR2PSR2Reg),
+		.out_SPSRWriteEnable(out_SPSRWriteEnable2Reg),
+		//can Write back go
+		.out_WBOwnCanGo(out_WBOwnCanGo),
+		.out_WBWriteEnable(out_WBWriteEnable),
+		.clock(clock),
+		.reset(reset)
+);
+
+
+MEM	inst_MEM(	//signal from ALU
+			.in_ALUValid(out_ALUWriteEnable),
+			.in_ALUWriteBus(out_ALUWriteBus),
+			.in_ALUTargetRegister(out_ALUTargetRegister2MEM),
+			.in_SimpleALUResult(out_SimpleALUResult2MEM),
+			.in_SimpleALUTargetRegister(out_SimpleALUTargetRegister2MEM),
+			.in_StoredValue(out_StoredValue),
+			.in_CPSR(out_ALUCPSR2MEM),
+			.in_SPSR(out_ALUSPSR2MEM),
+			.in_IfChangeState(out_IfChangeState2MEM),
+			.in_ChangeStateAction(out_ChangeStateAction2MEM),
+			.in_MEMStoreDelayBranchTarget(out_MEMStoreDelayBranchTarget2MEM),
+			.in_MEMDelayBranch(out_MEMDelayBranch2MEM),
+			.in_MemAccessUserBankRegister2MEM(out_MemAccessUserBankRegister2MEM),
+			.in_MEMHalfWordTransferType2MEM(out_MEMHalfWordTransferType2MEM),
+			.in_SWPByteOrWord2MEM(out_SWPByteOrWord2MEM),
+			//signal come from alu that origin come from decoder
+			.in_MEMType(out_MEMType2MEM),
+			.in_MEMTargetRegister(out_MEMTargetRegister2MEM),
+			.in_SimpleMEMType(out_SimpleMEMType2MEM),
+			.in_SimpleMEMTargetRegister(out_SimpleMEMTargetRegister2MEM),
+			.in_MEMPSRType(out_MEMPSRType2MEM),
+			.in_IsLoadToPC(out_IsLoadToPC),
+			//forwarding
+			.out_MEMWriteEnable(out_MEMWriteEnable),
+			.out_MEMWriteResult(out_MEMWriteResult),
+			.out_MEMTargetRegister(out_MEMTargetRegister2WB),
+			.out_SimpleMEMResult(out_SimpleMEMResult2WB),
+			.out_SimpleMEMTargetRegister(out_SimpleMEMTargetRegister2WB),
+			.out_MEMPSRType2WB(out_MEMPSRType2WB),
+			.out_CPSR2WB(out_CPSR2WB),
+			.out_SPSR2WB(out_SPSR2WB),
+			//this is also goto register
+			.out_IfChangeState(out_IfChangeState2WB),
+			.out_ChangeStateAction(out_ChangeStateAction2WB),
+			.out_MemAccessUserBankRegister2WB(out_MemAccessUserBankRegister2WB),
+			//the first and third write bus
+			.out_WriteBus(WriteBus),
+			.out_WriteRegisterEnable(WriteRegisterEnable),
+			.out_WriteRegisterNumber(WriteRegisterNumber),
+			.out_ThirdWriteBus(ThirdWriteBus),
+			.out_ThirdWriteRegisterEnable(ThirdWriteRegisterEnable),
+			.out_ThirdWriteRegisterNumber(ThirdWriteRegisterNumber),
+			.out_CPSR2PSR(out_CPSRWriteValue),
+			.out_CPSRWriteEnable(out_CPSRWriteEnable),
+			.out_SPSR2PSR(out_SPSRWriteValue),
+			.out_SPSRWriteEnable(out_SPSRWriteEnable),
+			//can MEM go?
+			.out_MEMOwnCanGo(out_MEMOwnCanGo),
+			.in_EXECanGo(out_EXECanGo),
+			.in_WBCanGo(out_WBCanGo),
+			//signal relate to load/store
+			.out_MEMAccessAddress(out_MEMAccessAddress),
+			.out_MEMAccessRequest(out_MEMAccessRequest),
+			.out_MEMAccessRW(out_MEMAccessRW),
+			.out_MEMAccessBW(out_MEMAccessBW),
+			.out_MEMAccessHalfWordTransfer(out_MEMAccessHalfWordTransfer),
+			.out_MEMAccessHalfWordType(out_MEMAccessHalfWordType),
+			.in_DataCacheWait(out_DataCacheWait),
+			.in_DataBus(DataBus_r),
+			.out_DataBus(DataBus_f),
+			//signal relate to change pc
+			.out_MEMChangePC(out_MEMChangePC),
+			.out_MEMNewPC(out_MEMNewPC),
+			//other signal
+			.clock(clock),
+			.reset(reset)
+			);
+
+
+ALUComb inst_ALUComb(.ALUCombResult(ALUCombResult),
+		.ALUHighResult(ALUHighResult),
+		.out_Carry(Carry),
+		.out_Zero(Zero),
+		.out_Neg(Neg),
+		.out_Overflow(Overflow),
+		.ALUComb_ALUType(ALUComb_ALUType),
+		.ALUComb_LeftOperand(ALUComb_LeftOperand),
+		.ALUComb_RightOperand(ALUComb_RightOperand),
+		.ALUComb_ThirdOperand(ALUComb_ThirdOperand),
+		.ALUComb_RightOperandShiftType(ALUComb_RightOperandShiftType),
+		.ALUComb_RightOperandShiftCount(ALUComb_RightOperandShiftCount),
+		.ALUComb_ShiftCountInReg(ALUComb_ShiftCountInReg),	//shift count in register
+		.ALUComb_ShiftCountHigh3Bit(ALUComb_ShiftCountHigh3Bit),	//the [7:5] bit of shoft count when shift count is in register
+		.ALUComb_Operand2IsReg(ALUComb_Operand2IsReg),
+		.in_Carry(ALUComb_Carry),
+		.in_Overflow(ALUComb_Overflow),
+		.in_Neg(ALUComb_Neg),
+		.in_Zero(ALUComb_Zero),
+		.in_LongMulSig(ALUComb_LongMulSig),
+		.clock(clock),
+		.reset(reset)
+);
+
+
+ALUShell inst_ALUShell(.out_ALUWriteEnable(out_ALUWriteEnable),
+		.out_ALUWriteBus(out_ALUWriteBus),		//write result
+		.out_CPSR(out_ALUCPSR2MEM),
+		.out_SPSR(out_ALUSPSR2MEM),
+		.out_ALUTargetRegister(out_ALUTargetRegister2MEM),	//write to which register
+		.out_SimpleALUResult(out_SimpleALUResult2MEM),
+		.out_SimpleALUTargetRegister(out_SimpleALUTargetRegister2MEM),
+		.out_MEMType(out_MEMType2MEM),
+		.out_MEMTargetRegister(out_MEMTargetRegister2MEM),
+		.out_SimpleMEMType(out_SimpleMEMType2MEM),
+		.out_SimpleMEMTargetRegister(out_SimpleMEMTargetRegister2MEM),
+		.out_StoredValue(out_StoredValue),
+		.out_ALUPSRType(out_ALUPSRType2MEM),
+		.out_MEMPSRType(out_MEMPSRType2MEM),
+		.out_IsLoadToPC(out_IsLoadToPC),
+		.out_IfChangeState(out_IfChangeState2MEM),
+		.out_ChangeStateAction(out_ChangeStateAction2MEM),
+		.out_MEMStoreDelayBranchTarget(out_MEMStoreDelayBranchTarget2MEM),
+		.out_MEMDelayBranch(out_MEMDelayBranch2MEM),
+		.out_MemAccessUserBankRegister(out_MemAccessUserBankRegister2MEM),
+		.out_MEMHalfWordTransferType(out_MEMHalfWordTransferType2MEM),
+		.out_SWPByteOrWord(out_SWPByteOrWord2MEM),
+		//above is signal relate to write
+		//below is signal relate to new operation come from decoder
+		.in_ALUEnable(out_ALUEnable),
+		.in_ALUType(out_ALUType),
+		.in_ALULeftRegister(out_LeftReadRegisterNumber),		
+		.in_ALURightRegister(out_RightReadRegisterNumber),		
+		.in_ALUThirdRegister(out_ThirdReadRegisterNumber),
+		.in_ALULeftFromImm(out_ALULeftFromImm),
+		.in_ALURightFromImm(out_ALURightFromImm),
+		.in_ALUThirdFromImm(out_ALUThirdFromImm),
+		.in_CPSRFromImm(out_CPSRFromImm),
+		.in_SPSRFromImm(out_SPSRFromImm),
+		.in_ALURightShiftType(out_ALURightShiftType),
+		.in_ALULeftReadBus(mux_LeftReadBus),
+		.in_ALURightReadBus(mux_RightReadBus),
+		.in_ALUThirdReadBus(mux_ThirdReadBus),
+		.in_ALUCPSRReadBus(out_CPSR),	//this must use value from status register file, it will deal with fresh itself
+		.in_ALUSPSRReadBus(out_SPSR),
+		.in_ALUTargetRegister(out_ALUTargetRegister),
+		.in_SimpleALUType(out_SimpleALUType),
+		.in_SimpleALUTargetRegister(out_SimpleALUTargetRegister),
+		.in_ALUMisc(out_ALUMisc),		//some special signal
+		.in_ALUPSRType(out_ALUPSRType),
+		.in_NextAddressGoWithInstruction2ALU(out_NextAddressGoWithInstruction2ALU),
+		//pass to mem stage for this instruction's mem operation
+		.in_MEMEnable(out_MEMEnable),
+		.in_MEMType(out_MEMType),
+		.in_MEMTargetRegister(out_MEMTargetRegister),
+		.in_SimpleMEMType(out_SimpleMEMType),
+		.in_SimpleMEMTargetRegister(out_SimpleMEMTargetRegister),
+		.in_MEMPSRType(out_MEMPSRType),
+		//below is signal relate to forward operand from mem stage
+		.in_MEMWriteEnable(out_MEMWriteEnable),
+		.in_MEMWriteResult(out_MEMWriteResult),
+		.in_MEMTargetRegister2WB(out_MEMTargetRegister2WB),
+		.in_SimpleMEMResult(out_SimpleMEMResult2WB),
+		.in_SimpleMEMTargetRegister2WB(out_SimpleMEMTargetRegister2WB),
+		.in_MEMPSRType2WB(out_MEMPSRType2WB),
+		.in_MEMCPSR2WB(out_CPSR2WB),
+		.in_MEMSPSR2WB(out_SPSR2WB),
+		//below is forwarding from write back
+		.in_WBWriteEnable(out_WBWriteEnable),
+		.in_WBMainResult(out_WriteBus2Reg),
+		.in_WBMainTargetRegister(out_WriteRegisterNumber2Reg),
+		.in_WBSimpleResult(out_ThirdWriteBus2Reg),
+		.in_WBSimpleTargetRegister(),
+		.in_WBCPSR,
+		.in_WBSPSR,
+		//below is signal relate to ALUComb connection
+		.ALUCombResult(ALUCombResult),
+		.ALUHighResult(ALUHighResult),
+		.in_Carry(Carry),
+		.in_Zero(Zero),
+		.in_Neg(Neg),
+		.in_Overflow(Overflow),
+		.ALUComb_ALUType(ALUComb_ALUType),
+		.ALUComb_LeftOperand(ALUComb_LeftOperand),
+		.ALUComb_RightOperand(ALUComb_RightOperand),
+		.ALUComb_ThirdOperand(ALUComb_ThirdOperand),
+		.ALUComb_RightOperandShiftType(ALUComb_RightOperandShiftType),
+		.ALUComb_RightOperandShiftCount(ALUComb_RightOperandShiftCount),
+		.ALUComb_ShiftCountInReg(ALUComb_ShiftCountInReg),	//shift count in register
+		.ALUComb_ShiftCountHigh3Bit(ALUComb_ShiftCountHigh3Bit),	//the [7:5] bit of shoft count when shift count is in register
+		.ALUComb_Operand2IsReg(ALUComb_Operand2IsReg),
+		//origin CPSR flag
+		.ALUComb_Carry(ALUComb_Carry),
+		.ALUComb_Neg(ALUComb_Neg),
+		.ALUComb_Overflow(ALUComb_Overflow),
+		.ALUComb_Zero(ALUComb_Zero),
+		.ALUComb_LongMulSig(ALUComb_LongMulSig),
+		//signal relate to pc change in branch instruction
+		.out_ChangePC(out_ChangePC),
+		.out_NewPC(out_NewPC),
+		//can alu go
+		.out_ALUOwnCanGo(out_EXEOwnCanGo),
+		//can mem go
+		.in_MEMCanGo(out_MEMCanGo),
+		//mem stage tell you to clear next operation
+		.in_MEMChangePC(out_MEMChangePC),
+		//thumb state
+		.in_ThumbState(out_CPSR_Fresh[`ThumbPos]),
+		.clock(clock),
+		.reset(reset)
+		);
+
+assign	mux_LeftReadBus=(out_ALULeftFromImm==1'b1)?dec_LeftReadBus:reg_LeftReadBus;
+assign	mux_RightReadBus=(out_ALURightFromImm==1'b1)?dec_RightReadBus:reg_RightReadBus;
+assign	mux_ThirdReadBus=(out_ALUThirdFromImm==1'b1)?dec_ThirdReadBus:reg_ThirdReadBus;
+
+Decoder_ARM  inst_Decoder_ARM(	.in_ValidInstruction_IFID(Valid_Pipeline_IFID),
+			.in_PipelineRegister_IFID(out_nnARMInstruction),
+			.in_AddressGoWithInstruction(out_NewAddressGoWithInstruction),
+			.in_NextInstructionAddress(out_NextInstructionAddress),
+			.out_IDOwnCanGo(out_IDOwnCanGo),
+			//signal for register file
+			.out_LeftReadRegisterEnable(out_LeftReadRegisterEnable),
+			.out_LeftReadRegisterNumber(out_LeftReadRegisterNumber),
+			.out_RightReadRegisterEnable(out_RightReadRegisterEnable),
+			.out_RightReadRegisterNumber(out_RightReadRegisterNumber),
+			//use to read the shift count stored in register
+			.out_ThirdReadRegisterEnable(out_ThirdReadRegisterEnable),
+			.out_ThirdReadRegisterNumber(out_ThirdReadRegisterNumber),
+			//signal for register file
+			//signal for ALU
+			.out_ALUEnable(out_ALUEnable),
+			.out_ALUType(out_ALUType),
+//			.out_ALULeftRegister(out_ALULeftRegister),
+//			.out_ALURightRegister(out_ALURightRegister),
+//			.out_ALUThirdRegister(out_ALUThirdRegister),
+			.out_ALULeftFromImm(out_ALULeftFromImm),
+			.out_ALURightFromImm(out_ALURightFromImm),
+			.out_ALUThirdFromImm(out_ALUThirdFromImm),
+			.out_CPSRFromImm(out_CPSRFromImm),
+			.out_SPSRFromImm(out_SPSRFromImm),
+			.out_ALUTargetRegister(out_ALUTargetRegister),
+			.out_ALUExtendedImmediateValue(dec_RightReadBus),	//extended 32bit immediate value ,go to right bus
+			.out_ALURightShiftType(out_ALURightShiftType),
+			.out_ALUSecondImmediateValue(dec_ThirdReadBus),	//serve as the shift count
+			.out_SimpleALUType(out_SimpleALUType),		//serve for the pre index mode of load/store
+			.out_SimpleALUTargetRegister(out_SimpleALUTargetRegister),
+			.out_ALUMisc(out_ALUMisc),			//some special signal
+			.out_ALUPSRType(out_ALUPSRType),
+			.out_AddressGoWithInstruction2ALU(dec_LeftReadBus),	//pc go on the left read bus
+			.out_NextAddressGoWithInstruction2ALU(out_NextAddressGoWithInstruction2ALU),
+			//signal for mem stage
+			.out_MEMEnable(out_MEMEnable),
+			.out_MEMType(out_MEMType),
+			.out_MEMTargetRegister(out_MEMTargetRegister),
+			.out_SimpleMEMType(out_SimpleMEMType),
+			.out_SimpleMEMTargetRegister(out_SimpleMEMTargetRegister),
+			.out_MEMPSRType(out_MEMPSRType),
+			//Thumb state
+			.in_ThumbState(out_CPSR_Fresh[`ThumbPos]),
+			.in_IsInPrivilegedMode(out_IsInPrivilegedMode),
+			//interrupt signal
+			.in_TrueFiq(TrueFiq),
+			.in_TrueIrq(TrueIrq),
+			//can AUL go
+			.in_ALUCanGo(out_EXECanGo),
+			//clear internal state
+			.in_ChangePC(out_ChangePC),
+			.in_MEMChangePC(out_MEMChangePC),
+			.clock(clock),
+			.reset(reset)
+			);
+
+ThumbDecoderWarper	inst_ThumbDecoderWarper(//input 
+			.in_ValidInstruction_IFID(Valid_Pipeline_IFID),
+			.in_PipelineRegister_IFID(Pipeline_IFID),
+			.in_AddressGoWithInstruction(out_AddressGoWithInstruction),
+			.in_ThumbState(out_CPSR_Fresh[`ThumbPos]),
+			//output
+			.out_NewAddressGoWithInstruction(out_NewAddressGoWithInstruction),
+			.out_nnARMInstruction(out_nnARMInstruction),
+			//clear internal state
+			.in_ChangePC(out_ChangePC),
+			.in_MEMChangePC(out_MEMChangePC),
+			.clock(clock),
+			.reset(reset)
+			);
+
+
+IF  inst_IF(.in_Instruction(Instruction),		//input from instruction prefetched buffer
+		.in_InstructionWait(Wait),	//wait for the prefetch buffer 
+		.out_InstructionAddress(out_InstructionAddress),	//output to instruction prefetched buffer
+		//above is for Instruction fetch
+		//use to read pc
+		.out_FourthReadRegisterEnable(out_FourthReadRegisterEnable),
+		.out_FourthReadRegisterNumber(out_FourthReadRegisterNumber),
+		.in_FourthReadBus(FourthReadBus),
+		//use to write pc
+		.out_SecondWriteRegisterEnable(out_SecondWriteRegisterEnable),
+		.out_SecondWriteRegisterNumber(out_SecondWriteRegisterNumber),
+		.out_SecondWriteBus(SecondWriteBus),
+		//can decoder go
+		.in_IDCanGo(out_IDCanGo),
+		//fetched instruction
+		.out_Instruction(Pipeline_IFID),
+		.out_ValidInstruction(Valid_Pipeline_IFID),
+		.out_AddressGoWithInstruction(out_AddressGoWithInstruction),
+		.out_NextInstructionAddress(out_NextInstructionAddress),
+		//signal relate to pc change in branch instruction
+		.in_ChangePC(out_ChangePC),
+		.in_NewPC(out_NewPC),
+		//signal send out by mem that declare to update pc
+		.in_MEMChangePC(out_MEMChangePC),
+		.in_MEMNewPC(out_MEMNewPC),
+		//thumb state
+		.in_ThumbState(out_CPSR_Fresh[`ThumbPos]),
+		.clock(clock),
+		.reset(reset)
+		);
+//no InstructionPreFetch anymore
+//InstructionPreFetch inst_InstructionPreFetch(
+//				.Instruction(Instruction),
+//				.Wait(Wait),
+//				.Address(out_InstructionAddress),
+				//above is the fetched instruction go to pipeline
+				//below is the prefetched instruction come from cache or memory
+//				.PreFetchedInstructions(InstructionOut),
+//				.PreFetchedWait(InstructionWait),
+//				.PreFetchedAddress(PreFetchedAddress),
+//				.PreFetchedRequest(PreFetchedRequest),
+//				.clock(clock),
+//				.reset(reset)
+//				);
+
+endmodule

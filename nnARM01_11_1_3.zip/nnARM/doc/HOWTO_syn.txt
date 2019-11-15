@@ -1,0 +1,10 @@
+			HOW TO synthesis nnARMCore
+
+	First, you can see that, in the file "filelist.txt", there is a "prj" and a "nnARM" diractory in "e:\ssy\nn\nn",all synthesis will be do under "prj" directory.
+
+SECTION	1	synthesis with aurora synthesor from workview office
+	
+
+SECTION	2	synthesis with quartus II from altera
+	"e:\ssy\nn\nn\nnARM\syn\quartus\syn.v" is the top level synthsis file , copy it to "e:\ssy\nn\nn\prj\quartus", then you can start the quartus II , and add this file as top level file, then you can synthesis it
+

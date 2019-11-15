@@ -1,0 +1,5 @@
+SECTION	1	how to simulate with vcs
+	if you see the "e:\ssy\nn\nn\nnARM_tb" directory? in it you can find "asm" directory, still in "asm", you can find "add64" and so on.
+	each of these directory have a program in XXX.s file(assembly language). 
+	and each of these directory have an "ASC" file. this is the program immage that have been convert to ASCII format.just copy this file to "e:\ssy\nn\nn\prj\wv", then start vcs and use "E:\ssy\nn\nn\nnARM\sim\vcs\tb_system.v" as the top level file to simulate
+	the registers file of nnARM is in tb_system\

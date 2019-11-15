@@ -1,0 +1,71 @@
+SECTION 1	dictionary under "e:\ssy\nn\nn"
+
+e:\ssy\nn\nn
+|----	nnARM			this is the source code and documantation for all nnARM relative thing,I will describ it below at section 2
+|
+|----	prj			you must creat an your project here, so all the temp file generate by compiler. synthesor and simulator will be place here and will not enter source code dictionary
+	|----	wv		the project dictionary for Workview office, vcs simulator and aurora synthesor will place their file here
+
+SECTION	2	source code directory
+nnARM
+|----	doc			documentation for this core
+|	|
+|	|----	progress.txt	develop progress of nnARM
+|	|----	filelist.txt	this file
+|	|----	howto_syn.txt	how to synthesis 
+|
+|----	prim			primitive for varies process
+|	|
+|	|----	altera		altera FPGA
+|	|----	xilinx		xilinx FPGA
+|	|----	indep		primitive description independent of process, currently only use by simulator
+|		|
+|		|----	WordAdder.v	32 bit adder
+|		|----	BarrelShifter	Barrel shifter
+|		|----	complementory.v	complementory place before adder in ALU
+|		|----	mul.v		32 bit input 64 bit output multipler 
+|
+|----	sim				simulation .v file directory
+|	|----	altera			altera modelsim
+|	|----	xilinx			xilinx modelsim
+|	|----	vcs			workview VCS
+|		|
+|		|----	Def_SimulationParameter.v	simulation parameter
+|		|----	MemoryController_WB_Beh.v	wishbone memory controller behavior model
+|		|----	nnARM1.v			include the nnARMCore and Wishbone bus and memory controller
+|		|----	tb_system.v			top level simulation file
+|		|----	timescalar.v			timescale definition
+|
+|----	src				all synsisable source file
+|	|
+|	|----	ALUComb.v		combinnation alu that perform all alu operation
+|	|----	ALUShell.v		correspond to EXE stage of DLX
+|	|----	CanGoGen.v		determine which stage can or cant go
+|	|----	D_Bus2Core.v		interface data access port to Wishbone bus
+|	|----	Decoder_ARM.v		decode ARM instructions into micro operations
+|	|----	Def_ALUType.v		define ALU type 
+|	|----	Def_ARMALU.v		ARM alu type in instruction fields
+|	|----	Def_BarrelShift.v	definition for BarrelShifter
+|	|----	Def_ConditionField.v	definition for condition field in instruction
+|	|----	Def_Decoder.v		definition for Decoder
+|	|----	Def_Exception.v		definition for exception
+|	|----	Def_mem.v		defininition for mem stage
+|	|----	Def_Mode.v		definition for processor mode
+|	|----	Def_psr.v		definition for PSR register file
+|	|----	Def_RegisterFile.v	definition for general register file
+|	|----	Def_StructureParameter.v	overral structure parameter
+|	|----	I_Bus2Core.v		interface instruction fetch to Wishbone bus
+|	|----	IF.v			instruction fetch stage
+|	|----	InterruptPriority.v	determine if interrupt signal can goto pipeline
+|	|----	mem.v			correspond to MEM stage of DLX pipeline
+|	|----	nnARMCore.v		top level synsisable file
+|	|----	psr.v			PSR register file
+|	|----	PSR_Fresh.v		generate the most fresh copy of PSR register
+|	|----	RegisterFile.v		general register file
+|	|----	Thumb_2_nnARM.v		translate Thumb instriction set into ARM instruction set
+|	|----	ThumbDecoderWarper.v	Wraper for Thumb_2_nnARM
+|	|----	WishBone_Arbiter.v	Wishbone arbiter for two masters
+|
+|----	syn				this directory contain some file relate to special syn tools
+	|----	quartus			some file relate to quartus syn tools
+		|----	syn.v		copy this file to QUARTUS project directory and then add it to project
